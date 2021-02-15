@@ -1,7 +1,9 @@
 import * as cdk from '@aws-cdk/core';
 import * as  dynamodb  from  '@aws-cdk/aws-dynamodb';
 import * as lambda from '@aws-cdk/aws-lambda';
+import * as sqs from '@aws-cdk/aws-sqs';
 import { DynamoDB } from '@aws-sdk/client-dynamodb';
+import { DynamoEventSource, SqsDlq } from '@aws-cdk/aws-lambda-event-sources';
 
 interface  CustomAppStackProps  extends  cdk.StackProps  {
   readonly  globalTablePrimaryKeyName: string;
@@ -38,6 +40,19 @@ export class AppStack extends cdk.Stack {
 
       // Grant read access
       globalTable.grantStreamRead(triggerLambda);
+
+      // Deadletter queue
+      const triggerDLQueue = new sqs.Queue(this, 'triggerDLQueue');
+      
+      // Trigger Event
+      triggerLambda.addEventSource(new DynamoEventSource(globalTable, {
+        startingPosition: lambda.StartingPosition.TRIM_HORIZON,
+        batchSize: 1,
+        bisectBatchOnError: true,
+        onFailure: new SqsDlq(triggerDLQueue),
+        retryAttempts: 10
+      }));
+
     });
   }
 }
